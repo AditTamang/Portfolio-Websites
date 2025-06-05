@@ -76,6 +76,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // Load saved files from localStorage on page load
   loadSavedFiles();
 
+  // Load public files for regular users
+  loadPublicFiles().catch(error => {
+    console.error('Error loading public files:', error);
+  });
+
   // CV Download
   if (downloadCvBtn) {
     downloadCvBtn.addEventListener('click', function() {
@@ -92,9 +97,14 @@ document.addEventListener('DOMContentLoaded', function() {
   if (downloadCertBtn) {
     downloadCertBtn.addEventListener('click', function() {
       if (currentCertFiles.length > 0) {
-        // Download all certificate files
-        currentCertFiles.forEach(file => downloadFile(file.id));
-        showDownloadStatus(certDownloadStatus, `✓ ${currentCertFiles.length} certificate(s) downloaded`, 'success');
+        if (currentCertFiles.length === 1) {
+          // If only one file, download directly
+          downloadFile(currentCertFiles[0].id);
+          showDownloadStatus(certDownloadStatus, '✓ Certificate downloaded successfully', 'success');
+        } else {
+          // Show selection modal for multiple files
+          showFileSelectionModal(currentCertFiles, 'certificates', certDownloadStatus);
+        }
       } else {
         showDownloadStatus(certDownloadStatus, '✗ No certificates available for download', 'error');
       }
@@ -105,46 +115,63 @@ document.addEventListener('DOMContentLoaded', function() {
   if (downloadProjectBtn) {
     downloadProjectBtn.addEventListener('click', function() {
       if (currentProjectFiles.length > 0) {
-        // Download all project files
-        currentProjectFiles.forEach(file => downloadFile(file.id));
-        showDownloadStatus(projectDownloadStatus, `✓ ${currentProjectFiles.length} project file(s) downloaded`, 'success');
+        if (currentProjectFiles.length === 1) {
+          // If only one file, download directly
+          downloadFile(currentProjectFiles[0].id);
+          showDownloadStatus(projectDownloadStatus, '✓ Project file downloaded successfully', 'success');
+        } else {
+          // Show selection modal for multiple files
+          showFileSelectionModal(currentProjectFiles, 'project files', projectDownloadStatus);
+        }
       } else {
         showDownloadStatus(projectDownloadStatus, '✗ No project files available for download', 'error');
       }
     });
   }
 
-  // Admin Access (Hidden functionality)
+  // Admin Access (Hidden functionality) - DISABLED FOR PRODUCTION
   let adminMode = false;
   let keySequence = [];
   const adminSequence = ['a', 'd', 'm', 'i', 'n'];
 
-  // Secret key sequence to enable admin mode (type "admin")
-  document.addEventListener('keydown', function(e) {
-    // Only track letter keys when not in input fields
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-      keySequence.push(e.key.toLowerCase());
+  // Check if we're in development mode (localhost)
+  const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-      // Keep only the last 5 keys
-      if (keySequence.length > 5) {
-        keySequence.shift();
-      }
+  // Secret key sequence to enable admin mode (type "admin") - ONLY IN DEVELOPMENT
+  if (isDevelopment) {
+    document.addEventListener('keydown', function(e) {
+      // Only track letter keys when not in input fields
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        keySequence.push(e.key.toLowerCase());
 
-      // Check if the sequence matches "admin"
-      if (keySequence.join('') === adminSequence.join('')) {
-        adminMode = !adminMode;
-        const uploadSection = document.querySelector('.upload-section.admin-only');
-        if (uploadSection) {
-          uploadSection.style.display = adminMode ? 'block' : 'none';
+        // Keep only the last 5 keys
+        if (keySequence.length > 5) {
+          keySequence.shift();
         }
-        console.log(adminMode ? 'Admin mode enabled - Upload section visible' : 'Admin mode disabled - Upload section hidden');
-        keySequence = []; // Reset sequence
 
-        // Show a subtle notification
-        showAdminNotification(adminMode);
+        // Check if the sequence matches "admin"
+        if (keySequence.join('') === adminSequence.join('')) {
+          adminMode = !adminMode;
+          const uploadSection = document.querySelector('.upload-section.admin-only');
+          if (uploadSection) {
+            uploadSection.style.display = adminMode ? 'block' : 'none';
+          }
+          console.log(adminMode ? 'Admin mode enabled - Upload section visible' : 'Admin mode disabled - Upload section hidden');
+          keySequence = []; // Reset sequence
+
+          // Show a subtle notification
+          showAdminNotification(adminMode);
+        }
       }
+    });
+  } else {
+    // In production, completely hide admin section
+    const uploadSection = document.querySelector('.upload-section.admin-only');
+    if (uploadSection) {
+      uploadSection.remove(); // Completely remove from DOM
     }
-  });
+    console.log('Admin mode disabled - Production environment detected');
+  }
 
   // Show admin mode notification
   function showAdminNotification(isEnabled) {
@@ -180,6 +207,183 @@ document.addEventListener('DOMContentLoaded', function() {
       statusElement.textContent = '';
       statusElement.className = 'download-status';
     }, 3000);
+  }
+
+  // Show file selection modal for multiple files
+  function showFileSelectionModal(files, fileTypeName, statusElement) {
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'modal-overlay';
+    modalOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      animation: fadeInModal 0.3s ease-out;
+    `;
+
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+    modalContent.style.cssText = `
+      background: var(--bg-secondary, #1a1a2e);
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      animation: slideInUp 0.3s ease-out;
+    `;
+
+    // Create modal HTML
+    modalContent.innerHTML = `
+      <div class="modal-header">
+        <h3 style="margin: 0 0 1rem 0; color: var(--text, #ffffff);">Select ${fileTypeName} to download</h3>
+        <button class="modal-close" style="
+          position: absolute;
+          top: 1rem;
+          right: 1rem;
+          background: none;
+          border: none;
+          font-size: 1.5rem;
+          color: var(--muted, #888);
+          cursor: pointer;
+          padding: 0.5rem;
+          border-radius: 50%;
+          transition: all 0.3s ease;
+        ">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="file-selection-list">
+          ${files.map(file => `
+            <div class="file-selection-item" style="
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              padding: 1rem;
+              margin-bottom: 0.5rem;
+              background: rgba(6, 182, 212, 0.1);
+              border-radius: 8px;
+              border: 1px solid rgba(6, 182, 212, 0.2);
+              transition: all 0.3s ease;
+            ">
+              <div class="file-info" style="display: flex; align-items: center; gap: 0.8rem;">
+                <span class="file-icon" style="font-size: 1.5rem;">${getFileIcon(file.type)}</span>
+                <div>
+                  <h5 style="margin: 0; color: var(--text, #ffffff); font-size: 0.9rem;">${file.name}</h5>
+                  <p style="margin: 0; color: var(--muted, #888); font-size: 0.8rem;">${file.size}</p>
+                </div>
+              </div>
+              <button class="download-file-btn" data-file-id="${file.id}" style="
+                background: var(--primary, #06b6d4);
+                color: var(--text, #ffffff);
+                border: none;
+                padding: 0.5rem 1rem;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.8rem;
+                transition: all 0.3s ease;
+              ">Download</button>
+            </div>
+          `).join('')}
+        </div>
+        <div class="modal-actions" style="
+          display: flex;
+          gap: 1rem;
+          margin-top: 1.5rem;
+          justify-content: flex-end;
+        ">
+          <button class="download-all-btn" style="
+            background: var(--primary, #06b6d4);
+            color: var(--text, #ffffff);
+            border: none;
+            padding: 0.7rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+          ">Download All</button>
+          <button class="cancel-btn" style="
+            background: transparent;
+            color: var(--muted, #888);
+            border: 1px solid var(--muted, #888);
+            padding: 0.7rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+          ">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+
+    // Add event listeners
+    const closeModal = () => {
+      modalOverlay.style.animation = 'fadeOutModal 0.3s ease-in forwards';
+      setTimeout(() => modalOverlay.remove(), 300);
+    };
+
+    // Close button
+    modalContent.querySelector('.modal-close').addEventListener('click', closeModal);
+    modalContent.querySelector('.cancel-btn').addEventListener('click', closeModal);
+
+    // Click outside to close
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
+
+    // Individual download buttons
+    modalContent.querySelectorAll('.download-file-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const fileId = parseFloat(e.target.dataset.fileId);
+        console.log('Modal download button clicked for file ID:', fileId);
+        console.log('Button dataset:', e.target.dataset);
+
+        const file = files.find(f => f.id == fileId); // Use == for loose comparison
+        if (file) {
+          console.log('File found in modal:', file.name);
+          downloadFile(fileId);
+          showDownloadStatus(statusElement, `✓ ${file.name} downloaded successfully`, 'success');
+          closeModal();
+        } else {
+          console.error('File not found in modal for ID:', fileId);
+          console.log('Available files in modal:', files.map(f => ({ id: f.id, name: f.name })));
+          showDownloadStatus(statusElement, '✗ File not found', 'error');
+        }
+      });
+    });
+
+    // Download all button
+    modalContent.querySelector('.download-all-btn').addEventListener('click', () => {
+      files.forEach(file => downloadFile(file.id));
+      showDownloadStatus(statusElement, `✓ All ${files.length} ${fileTypeName} downloaded`, 'success');
+      closeModal();
+    });
+
+    // Add hover effects
+    modalContent.querySelectorAll('.file-selection-item').forEach(item => {
+      item.addEventListener('mouseenter', () => {
+        item.style.background = 'rgba(6, 182, 212, 0.2)';
+        item.style.transform = 'translateY(-2px)';
+      });
+      item.addEventListener('mouseleave', () => {
+        item.style.background = 'rgba(6, 182, 212, 0.1)';
+        item.style.transform = 'translateY(0)';
+      });
+    });
   }
 
   // Helper function to update download button state
@@ -244,6 +448,99 @@ document.addEventListener('DOMContentLoaded', function() {
       reader.onload = () => resolve(reader.result);
       reader.onerror = error => reject(error);
     });
+  }
+
+  // Load public files for regular users (predefined files)
+  async function loadPublicFiles() {
+    // Only load public files if no admin files are present
+    if (uploadedFiles.length === 0) {
+      console.log('Loading public files for regular users...');
+
+      // Define your public files here - only files that actually exist will be loaded
+      const publicFiles = [
+        {
+          id: 'cv_001',
+          name: 'Adit_Resume.pdf',
+          type: 'cv',
+          url: 'assets/files/Adit_Resume.pdf'
+        },
+        {
+          id: 'cert_001',
+          name: 'Web_Development_Certificate.pdf',
+          type: 'cert',
+          url: 'assets/files/Web_Development_Certificate.pdf'
+        },
+        {
+          id: 'cert_002',
+          name: 'UI_Design_Award.pdf',
+          type: 'cert',
+          url: 'assets/files/UI_Design_Award.pdf'
+        },
+        {
+          id: 'project_001',
+          name: 'Project_Documentation.pdf',
+          type: 'project',
+          url: 'assets/files/Project_Documentation.pdf'
+        }
+      ];
+
+      // Check if files exist and add them
+      const fileCheckPromises = publicFiles.map(async (fileData) => {
+        try {
+          const response = await fetch(fileData.url, { method: 'HEAD' });
+          if (response.ok) {
+            // Get file size from response headers
+            const contentLength = response.headers.get('content-length');
+            const fileSize = contentLength ? formatFileSize(parseInt(contentLength)) : 'Unknown size';
+
+            const fileObj = {
+              id: fileData.id,
+              name: fileData.name,
+              size: fileSize,
+              type: fileData.type,
+              url: fileData.url,
+              isPublic: true
+            };
+
+            uploadedFiles.push(fileObj);
+
+            // Add to appropriate arrays
+            if (fileData.type === 'cv') {
+              currentCvFile = fileObj;
+            } else if (fileData.type === 'cert') {
+              currentCertFiles.push(fileObj);
+            } else if (fileData.type === 'project') {
+              currentProjectFiles.push(fileObj);
+            }
+
+            console.log('Public file loaded:', fileData.name);
+            return true;
+          } else {
+            console.log('Public file not found:', fileData.name);
+            return false;
+          }
+        } catch (error) {
+          console.log('Error checking file:', fileData.name, error);
+          return false;
+        }
+      });
+
+      // Wait for all file checks to complete
+      await Promise.all(fileCheckPromises);
+
+      // Update download buttons
+      if (currentCvFile && downloadCvBtn) {
+        updateDownloadButton(downloadCvBtn);
+      }
+      if (currentCertFiles.length > 0 && downloadCertBtn) {
+        updateDownloadButton(downloadCertBtn);
+      }
+      if (currentProjectFiles.length > 0 && downloadProjectBtn) {
+        updateDownloadButton(downloadProjectBtn);
+      }
+
+      console.log('Public files loaded successfully');
+    }
   }
 
   // Load files from localStorage
@@ -395,7 +692,7 @@ document.addEventListener('DOMContentLoaded', function() {
     for (const file of Array.from(files)) {
       if (validateFile(file, fileType)) {
         const fileObj = {
-          id: Date.now() + Math.random(),
+          id: `${fileType}_${Date.now()}`,
           name: file.name,
           size: formatFileSize(file.size),
           type: fileType,
@@ -485,14 +782,36 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   window.downloadFile = function(id) {
-    const file = uploadedFiles.find(f => f.id === id);
+    console.log('Attempting to download file with ID:', id);
+    console.log('Available files:', uploadedFiles.map(f => ({ id: f.id, name: f.name })));
+
+    const file = uploadedFiles.find(f => f.id == id); // Use == for loose comparison
     if (file) {
-      const url = URL.createObjectURL(file.file);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      a.click();
-      URL.revokeObjectURL(url);
+      console.log('File found:', file.name);
+
+      if (file.isPublic && file.url) {
+        // Handle public files with direct URL download
+        const a = document.createElement('a');
+        a.href = file.url;
+        a.download = file.name;
+        a.target = '_blank'; // Open in new tab if direct download fails
+        a.click();
+        console.log('Public file download initiated for:', file.name);
+      } else if (file.file) {
+        // Handle uploaded files with blob URL
+        const url = URL.createObjectURL(file.file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
+        console.log('Uploaded file download initiated for:', file.name);
+      } else {
+        console.error('File object is missing both URL and file data');
+      }
+    } else {
+      console.error('File not found for ID:', id);
+      console.log('Available file IDs:', uploadedFiles.map(f => f.id));
     }
   };
 
